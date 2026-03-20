@@ -1,0 +1,353 @@
+-- LocalScript р╣Гр╕Щ StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+local mouse = player:GetMouse()
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
+    humanoid = newChar:WaitForChild("Humanoid")
+end)
+
+-- ========== UI ==========
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FloatUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 200, 0, 110)
+mainFrame.Position = UDim2.new(0, 10, 0, 10)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BackgroundTransparency = 0.3
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+
+local pointLabel = Instance.new("TextLabel")
+pointLabel.Size = UDim2.new(1, 0, 0, 45)
+pointLabel.Position = UDim2.new(0, 0, 0, 5)
+pointLabel.BackgroundTransparency = 1
+pointLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
+pointLabel.TextScaled = true
+pointLabel.Font = Enum.Font.GothamBold
+pointLabel.Text = "ЁЯПЖ Points: 0"
+pointLabel.Parent = mainFrame
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0.8, 0, 0, 40)
+toggleButton.Position = UDim2.new(0.1, 0, 0, 60)
+toggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextScaled = true
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.Text = "OFF"
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = mainFrame
+
+Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(0, 8)
+
+-- ========== Team Label (р╕бр╕╕р╕бр╕Вр╕зр╕▓р╕Ър╕Щ) ==========
+local teamScreenGui = Instance.new("ScreenGui")
+teamScreenGui.Name = "TeamDisplay"
+teamScreenGui.ResetOnSpawn = false
+teamScreenGui.Parent = player.PlayerGui
+
+local teamLabel = Instance.new("TextLabel")
+teamLabel.Size = UDim2.new(0, 160, 0, 30)
+teamLabel.Position = UDim2.new(1, -170, 0, 10)
+teamLabel.BackgroundTransparency = 1
+teamLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamLabel.TextScaled = true
+teamLabel.Font = Enum.Font.GothamBold
+teamLabel.TextXAlignment = Enum.TextXAlignment.Right
+teamLabel.Text = "Team: -"
+teamLabel.Parent = teamScreenGui
+
+RunService.Heartbeat:Connect(function()
+    local team = player.Team
+    if team then
+        teamLabel.Text = "Team: " .. team.Name
+        teamLabel.TextColor3 = team.TeamColor.Color
+    else
+        teamLabel.Text = "Team: -"
+        teamLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    end
+end)
+
+-- ========== Variables ==========
+local isOn = false
+local points = 0
+local floatPart = nil
+local floatTween = nil
+local followConnection = nil
+local checkConnection = nil
+local durzConnection = nil
+local tauntConnection = nil
+local antiAfkConnection = nil
+local teamWatchConnection = nil
+
+local leaderstats = player:WaitForChild("leaderstats")
+local durzStat = leaderstats:WaitForChild("Durz")
+local lastDurzValue = durzStat.Value
+
+local function updatePointLabel()
+    pointLabel.Text = "ЁЯПЖ Points: " .. points
+end
+
+local function getTargetSlot()
+    return workspace.DurrWaitingPoint.Container:GetChildren()[2]
+end
+
+local function moveHardestToSlot()
+    local hardest = workspace.Obbies.AwardParts.Hardest
+    local slot = getTargetSlot()
+    if hardest and slot then
+        hardest.CFrame = slot.CFrame
+    end
+end
+
+local function removePart()
+    if floatTween then floatTween:Cancel() floatTween = nil end
+    if followConnection then followConnection:Disconnect() followConnection = nil end
+    if floatPart then floatPart:Destroy() floatPart = nil end
+end
+
+local function createFloatPart()
+    removePart()
+
+    local slot = getTargetSlot()
+    if not slot then return end
+
+    local part = Instance.new("Part")
+    part.Name = "FloatBase"
+    part.Size = Vector3.new(4, 0.5, 4)
+    part.Anchored = true
+    part.CanCollide = true
+    part.BrickColor = BrickColor.new("Bright blue")
+    part.Material = Enum.Material.Neon
+    part.Transparency = 0.3
+    part.CFrame = slot.CFrame
+    part.Parent = workspace
+
+    floatPart = part
+
+    task.wait(0.05)
+    humanoidRootPart.CFrame = CFrame.new(
+        part.Position.X,
+        part.Position.Y + 3.5,
+        part.Position.Z
+    )
+
+    local baseY = part.Position.Y
+    local goingUp = true
+
+    local function doFloat()
+        if not isOn or not floatPart then return end
+
+        local targetY = goingUp and (baseY + 10) or (baseY - 10)
+        local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+
+        floatTween = TweenService:Create(floatPart, tweenInfo, {
+            CFrame = CFrame.new(floatPart.Position.X, targetY, floatPart.Position.Z)
+        })
+        floatTween:Play()
+
+        floatTween.Completed:Connect(function(state)
+            if state == Enum.PlaybackState.Completed and isOn and floatPart then
+                baseY = floatPart.Position.Y
+                goingUp = not goingUp
+                doFloat()
+            end
+        end)
+    end
+
+    followConnection = RunService.Heartbeat:Connect(function()
+        if floatPart and humanoidRootPart and humanoid then
+            humanoid.PlatformStand = true
+            local p = floatPart.Position
+            humanoidRootPart.CFrame = CFrame.new(p.X, p.Y + 3.5, p.Z)
+        end
+    end)
+
+    doFloat()
+end
+
+local function stopPositionCheck()
+    if checkConnection then checkConnection:Disconnect() checkConnection = nil end
+end
+
+local function startPositionCheck()
+    stopPositionCheck()
+    checkConnection = RunService.Heartbeat:Connect(function()
+        if not isOn or not floatPart then return end
+        local slot = getTargetSlot()
+        if not slot then return end
+        local dist = (floatPart.Position - slot.Position).Magnitude
+        if dist > 30 then
+            removePart()
+            task.wait(0.1)
+            createFloatPart()
+        end
+    end)
+end
+
+local function stopPointTimer()
+    if durzConnection then durzConnection:Disconnect() durzConnection = nil end
+end
+
+local function startPointTimer()
+    stopPointTimer()
+    durzConnection = durzStat.Changed:Connect(function(newValue)
+        local diff = newValue - lastDurzValue
+        if diff > 0 then
+            points = points + diff
+            updatePointLabel()
+        end
+        lastDurzValue = newValue
+    end)
+end
+
+local function stopTauntLoop()
+    if tauntConnection then tauntConnection:Disconnect() tauntConnection = nil end
+end
+
+local function startTauntLoop()
+    stopTauntLoop()
+    local elapsed = 0
+    tauntConnection = RunService.Heartbeat:Connect(function(dt)
+        elapsed = elapsed + dt
+        if elapsed < 0.5 then return end
+        elapsed = 0
+
+        local taunt = player.Backpack:FindFirstChild("Taunt")
+        if not taunt then
+            taunt = character and character:FindFirstChild("Taunt")
+        end
+
+        if taunt then
+            humanoid:EquipTool(taunt)
+            task.wait(0.05)
+            local equipped = character and character:FindFirstChild("Taunt")
+            if equipped and equipped:IsA("Tool") then
+                equipped:Activate()
+            end
+        end
+    end)
+end
+
+local function stopAntiAfk()
+    if antiAfkConnection then antiAfkConnection:Disconnect() antiAfkConnection = nil end
+end
+
+local function startAntiAfk()
+    stopAntiAfk()
+    local elapsed = 0
+    antiAfkConnection = RunService.Heartbeat:Connect(function(dt)
+        elapsed = elapsed + dt
+        if elapsed < 60 then return end
+        elapsed = 0
+
+        local screenX = workspace.CurrentCamera.ViewportSize.X / 2
+        local screenY = workspace.CurrentCamera.ViewportSize.Y / 2
+
+        VirtualInputManager:SendMouseButtonEvent(screenX, screenY, 0, true, game, 1)
+        task.wait(0.1)
+        VirtualInputManager:SendMouseButtonEvent(screenX, screenY, 0, false, game, 1)
+    end)
+end
+
+local function stopTeamWatch()
+    if teamWatchConnection then
+        teamWatchConnection:Disconnect()
+        teamWatchConnection = nil
+    end
+end
+
+-- ========== Team Watcher ==========
+local function startTeamWatch()
+    stopTeamWatch()
+    teamWatchConnection = player:GetPropertyChangedSignal("Team"):Connect(function()
+        local team = player.Team
+
+        if team and team.Name == "Durr" then
+            -- р╕Бр╕Ф OFF р╕Бр╣Ир╕нр╕Щ
+            isOn = false
+            toggleButton.Text = "OFF"
+            toggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
+            removePart()
+            stopPositionCheck()
+            stopPointTimer()
+            stopTauntLoop()
+            stopAntiAfk()
+            if humanoid then humanoid.PlatformStand = false end
+
+            -- р╣Бр╕ер╣Йр╕зр╕Др╣Ир╕нр╕в TP р╕ер╕З -9999
+            task.wait(0.1)
+            if humanoidRootPart then
+                humanoidRootPart.CFrame = CFrame.new(
+                    humanoidRootPart.Position.X,
+                    -9999,
+                    humanoidRootPart.Position.Z
+                )
+            end
+
+        elseif team and (team.Name == "Alive" or team.Name == "Dead") then
+            -- р╕Чр╕╡р╕бр╕Бр╕ер╕▒р╕Ър╕бр╕▓р╕Ыр╕Бр╕Хр╕┤ тЖТ р╕Бр╕Ф ON р╕нр╕▒р╕Хр╣Вр╕Щр╕бр╕▒р╕Хр╕┤
+            if not isOn then
+                isOn = true
+                toggleButton.Text = "ON"
+                toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+                moveHardestToSlot()
+                task.wait(0.2)
+                createFloatPart()
+                startPositionCheck()
+                startPointTimer()
+                startTauntLoop()
+                startAntiAfk()
+            end
+        end
+    end)
+end
+
+-- ========== Toggle Button ==========
+toggleButton.MouseButton1Click:Connect(function()
+    isOn = not isOn
+
+    if isOn then
+        toggleButton.Text = "ON"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+
+        moveHardestToSlot()
+        task.wait(0.2)
+        createFloatPart()
+        startPositionCheck()
+        startPointTimer()
+        startTeamWatch()
+        startTauntLoop()
+        startAntiAfk()
+    else
+        toggleButton.Text = "OFF"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
+
+        removePart()
+        stopPositionCheck()
+        stopPointTimer()
+        stopTeamWatch()
+        stopTauntLoop()
+        stopAntiAfk()
+
+        if humanoid then humanoid.PlatformStand = false end
+    end
+end)
